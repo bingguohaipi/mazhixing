@@ -1,0 +1,185 @@
+# 生产环境一键部署：MySQL + Redis + Judge0 + Backend + Celery + Frontend
+# 启动: ./deploy/scripts/prod-up.sh
+# 详见: README.md 与 deploy/PRODUCTION_CHECKLIST.md
+
+x-judge0-env: &judge0-env
+  REDIS_HOST: judge0-redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ${JUDGE0_REDIS_PASSWORD:-judge0redis}
+  POSTGRES_HOST: judge0-db
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: judge0
+  POSTGRES_USER: judge0
+  POSTGRES_PASSWORD: ${JUDGE0_POSTGRES_PASSWORD:-judge0password}
+  MAX_QUEUE_SIZE: 100
+  ENABLE_WAIT_RESULT: "true"
+  ENABLE_COMPILER_OPTIONS: "true"
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: mazhixing
+      MYSQL_USER: mzx
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mzx123456}
+    volumes:
+      - mzx_mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  judge0-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: ${JUDGE0_POSTGRES_PASSWORD:-judge0password}
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  judge0-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${JUDGE0_REDIS_PASSWORD:-judge0redis}
+    volumes:
+      - judge0_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${JUDGE0_REDIS_PASSWORD:-judge0redis}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  judge0-server:
+    image: judge0/judge0:1.13.0
+    restart: unless-stopped
+    privileged: true
+    environment:
+      <<: *judge0-env
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2358/system_info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  judge0-worker:
+    image: judge0/judge0:1.13.0
+    restart: unless-stopped
+    privileged: true
+    command: ["./scripts/workers"]
+    environment:
+      <<: *judge0-env
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://mzx:${MYSQL_PASSWORD:-mzx123456}@mysql:3306/mazhixing?charset=utf8mb4
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      JUDGE0_URL: http://judge0-server:2358
+      JUDGE0_REQUIRED: "true"
+      JUDGE0_ALLOW_LOCAL_FALLBACK: "false"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      judge0-server:
+        condition: service_healthy
+    # 仅 Docker 内网访问；对外经 frontend Nginx 反代，勿映射 8000 到宿主机
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://mzx:${MYSQL_PASSWORD:-mzx123456}@mysql:3306/mazhixing?charset=utf8mb4
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "false"
+    command: ["celery", "-A", "app.celery_app:celery_app", "beat", "--loglevel=info"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://mzx:${MYSQL_PASSWORD:-mzx123456}@mysql:3306/mazhixing?charset=utf8mb4
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      JUDGE0_URL: http://judge0-server:2358
+      JUDGE0_REQUIRED: "true"
+      JUDGE0_ALLOW_LOCAL_FALLBACK: "false"
+    command: ["celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=info", "-c", "2"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      judge0-server:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    # HTTPS: docker compose -f docker-compose.prod.yml -f docker-compose.https.yml up -d
+    # 监控: docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d
+
+volumes:
+  mzx_mysql_data:
+  judge0_postgres_data:
+  judge0_redis_data:

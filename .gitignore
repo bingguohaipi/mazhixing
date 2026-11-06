@@ -1,0 +1,23 @@
+# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.pyc
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.*.example
+backend/*.db
+deploy/certs/
+deploy/certbot-www/
+*.pem
+*.key
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.DS_Store

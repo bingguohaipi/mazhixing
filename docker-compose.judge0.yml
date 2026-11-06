@@ -1,0 +1,86 @@
+# Judge0 CE 判题服务
+# 启动: docker compose -f docker-compose.judge0.yml up -d
+# API 地址: http://localhost:2358
+# 后端配置: JUDGE0_URL=http://localhost:2358
+
+x-judge0-env: &judge0-env
+  REDIS_HOST: judge0-redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ${JUDGE0_REDIS_PASSWORD:-judge0redis}
+  POSTGRES_HOST: judge0-db
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: judge0
+  POSTGRES_USER: judge0
+  POSTGRES_PASSWORD: judge0password
+  MAX_QUEUE_SIZE: 100
+  ENABLE_WAIT_RESULT: "true"
+  ENABLE_COMPILER_OPTIONS: "true"
+
+services:
+  judge0-db:
+    image: postgres:16-alpine
+    container_name: mzx-judge0-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: mzx-judge0-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${JUDGE0_REDIS_PASSWORD:-judge0redis}
+    volumes:
+      - judge0_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${JUDGE0_REDIS_PASSWORD:-judge0redis}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  judge0-server:
+    image: judge0/judge0:1.13.0
+    container_name: mzx-judge0-server
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "2358:2358"
+    environment:
+      <<: *judge0-env
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2358/system_info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  judge0-worker:
+    image: judge0/judge0:1.13.0
+    container_name: mzx-judge0-worker
+    restart: unless-stopped
+    privileged: true
+    command: ["./scripts/workers"]
+    environment:
+      <<: *judge0-env
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+volumes:
+  judge0_postgres_data:
+  judge0_redis_data:

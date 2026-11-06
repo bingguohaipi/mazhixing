@@ -1,0 +1,29 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mzx-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: mazhixing
+      MYSQL_USER: mzx
+      MYSQL_PASSWORD: mzx123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - mzx_mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  redis:
+    image: redis:7-alpine
+    container_name: mzx-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+# Judge0 判题沙箱（独立启动）:
+#   docker compose -f docker-compose.judge0.yml up -d
+# 然后在 backend/.env 设置 JUDGE0_URL=http://localhost:2358
+
+volumes:
+  mzx_mysql_data:

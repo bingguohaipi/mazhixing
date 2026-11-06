@@ -1,0 +1,23 @@
+{
+  "problems": [
+    {
+      "title": "Hello World",
+      "description": "输出一行 Hello World",
+      "languages": ["Python", "C++"],
+      "difficulty": "入门",
+      "knowledge_points": ["输入输出"],
+      "sample_input": "",
+      "sample_output": "Hello World",
+      "time_limit_ms": 1000,
+      "memory_limit_mb": 256,
+      "test_cases": [
+        {
+          "input_data": "",
+          "expected_output": "Hello World\n",
+          "is_sample": true,
+          "sort_order": 0
+        }
+      ]
+    }
+  ]
+}
