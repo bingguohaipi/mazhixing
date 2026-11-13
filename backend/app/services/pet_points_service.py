@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppException
@@ -31,7 +32,18 @@ class PetPointsService:
                 points_per_first_ac=self.MAX_POINTS_PER_FIRST_AC,
             )
             self.db.add(config)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except IntegrityError:
+                # 多个 gunicorn worker 并发初始化，别的进程已插入 id=1
+                self.db.rollback()
+                config = (
+                    self.db.query(PetSystemConfig)
+                    .filter(PetSystemConfig.id == 1)
+                    .first()
+                )
+                if config is None:
+                    raise
             self.db.refresh(config)
         elif config.points_launched_at is None:
             config.points_launched_at = datetime.now(timezone.utc)

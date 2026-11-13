@@ -90,6 +90,12 @@ def ensure_shop_catalog(db: Session) -> None:
     existing = db.query(ShopItem.sku).limit(1).first()
     if existing is not None:
         return
-    for row in DEFAULT_SHOP_ITEMS:
-        db.add(ShopItem(**row, is_active=True))
-    db.commit()
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        for row in DEFAULT_SHOP_ITEMS:
+            db.add(ShopItem(**row, is_active=True))
+        db.commit()
+    except IntegrityError:
+        # 多个 gunicorn worker 并发初始化时会撞唯一键
+        db.rollback()

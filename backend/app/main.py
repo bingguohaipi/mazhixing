@@ -35,7 +35,6 @@ from app.models import (  # noqa: F401
     pet,
     knowledge_point,
 )
-from app.services.audit_retention import purge_expired_logs
 from app.services.judge0_client import check_judge0_health
 from app.scripts.seed import seed_demo_data
 
@@ -67,22 +66,9 @@ async def lifespan(_app: FastAPI):
         if not settings.is_production:
             seed_demo_data()
 
-    db = SessionLocal()
-    try:
-        purge_expired_logs(db)
-        from app.services.pet_catalog_defaults import ensure_shop_catalog
-        from app.services.pet_points_service import PetPointsService
+    from app.bootstrap import bootstrap_data
 
-        ensure_shop_catalog(db)
-        PetPointsService(db)._ensure_config()
-        from app.services.admin_service import AdminPublicProblemService
-
-        AdminPublicProblemService(db).reconcile_public_catalog()
-        from app.services.knowledge_point_service import KnowledgePointService
-
-        KnowledgePointService(db).ensure_catalog()
-    finally:
-        db.close()
+    bootstrap_data()
 
     yield
 

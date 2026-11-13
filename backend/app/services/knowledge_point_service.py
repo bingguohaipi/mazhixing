@@ -30,16 +30,22 @@ class KnowledgePointService:
             or 0
         )
         if active_count == 0:
-            for entry in default_seed_entries():
-                self.db.add(
-                    KnowledgePoint(
-                        name=entry.name,
-                        summary=entry.summary,
-                        content_markdown=entry.content_markdown,
-                        sort_order=entry.sort_order,
+            from sqlalchemy.exc import IntegrityError
+
+            try:
+                for entry in default_seed_entries():
+                    self.db.add(
+                        KnowledgePoint(
+                            name=entry.name,
+                            summary=entry.summary,
+                            content_markdown=entry.content_markdown,
+                            sort_order=entry.sort_order,
+                        )
                     )
-                )
-            self.db.commit()
+                self.db.commit()
+            except IntegrityError:
+                # 多个 gunicorn worker 同时初始化，别的进程已写入
+                self.db.rollback()
         registry.reload_from_db(self.db)
 
     def refresh_registry(self) -> None:
