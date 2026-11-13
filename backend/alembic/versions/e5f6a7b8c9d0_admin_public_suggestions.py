@@ -36,13 +36,19 @@ def _has_index(table: str, index_name: str) -> bool:
     return index_name in {idx["name"] for idx in inspector.get_indexes(table)}
 
 
+def _is_mysql() -> bool:
+    return op.get_bind().dialect.name == "mysql"
+
+
 def upgrade() -> None:
-    op.execute(
-        sa.text(
-            "ALTER TABLE users MODIFY COLUMN role "
-            "ENUM('admin','teacher','student','parent') NOT NULL"
+    # MODIFY COLUMN / ENUM 是 MySQL 专有语法；SQLite 等方言直接跳过
+    if _is_mysql():
+        op.execute(
+            sa.text(
+                "ALTER TABLE users MODIFY COLUMN role "
+                "ENUM('admin','teacher','student','parent') NOT NULL"
+            )
         )
-    )
 
     if not _has_column("problems", "scope"):
         op.add_column(
@@ -128,9 +134,10 @@ def downgrade() -> None:
         op.drop_column("problems", "publish_status")
     if _has_column("problems", "scope"):
         op.drop_column("problems", "scope")
-    op.execute(
-        sa.text(
-            "ALTER TABLE users MODIFY COLUMN role "
-            "ENUM('teacher','student','parent') NOT NULL"
+    if _is_mysql():
+        op.execute(
+            sa.text(
+                "ALTER TABLE users MODIFY COLUMN role "
+                "ENUM('teacher','student','parent') NOT NULL"
+            )
         )
-    )
