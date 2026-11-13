@@ -67,13 +67,15 @@ def main() -> int:
     check("DATABASE_URL", db_url.startswith("mysql"), "MySQL connection string", errors, warnings)
 
     cors = env.get("CORS_ORIGINS", "")
-    check(
-        "CORS_ORIGINS",
-        cors.startswith("https://") and "localhost" not in cors,
-        cors or "missing",
-        errors,
-        warnings,
-    )
+    cors_https = cors.startswith("https://") and "localhost" not in cors
+    cors_ip_http = cors.startswith("http://") and "localhost" not in cors
+    if cors_https:
+        check("CORS_ORIGINS", True, cors, errors, warnings)
+    elif cors_ip_http:
+        warnings.append("CORS_ORIGINS: http://IP:8080 is OK before ICP; switch to https after备案")
+        print(f"  [WARN] CORS_ORIGINS: {cors} (备案前可用，备案后改为 https://域名)")
+    else:
+        check("CORS_ORIGINS", False, cors or "missing", errors, warnings)
 
     check("JUDGE0_URL", bool(env.get("JUDGE0_URL")), env.get("JUDGE0_URL", "required"), errors, warnings)
     check(
@@ -110,8 +112,34 @@ def main() -> int:
                 "ALIYUN_SMS_TEMPLATE_CODE",
             ):
                 check(key, bool(env.get(key)), env.get(key, "missing")[:20], errors, warnings)
+        elif sms_provider in ("dypns", "aliyun_dypns"):
+            check("SMS_PROVIDER", True, "dypns", errors, warnings)
+            ak = env.get("ALIYUN_DYPNS_ACCESS_KEY_ID") or env.get("ALIYUN_SMS_ACCESS_KEY_ID")
+            sk = env.get("ALIYUN_DYPNS_ACCESS_KEY_SECRET") or env.get("ALIYUN_SMS_ACCESS_KEY_SECRET")
+            check("ALIYUN_DYPNS_ACCESS_KEY_ID", bool(ak), "configured" if ak else "missing", errors, warnings)
+            check(
+                "ALIYUN_DYPNS_ACCESS_KEY_SECRET",
+                bool(sk),
+                "configured" if sk else "missing",
+                errors,
+                warnings,
+            )
+            check(
+                "ALIYUN_DYPNS_SIGN_NAME",
+                bool(env.get("ALIYUN_DYPNS_SIGN_NAME")),
+                env.get("ALIYUN_DYPNS_SIGN_NAME", "missing")[:20],
+                errors,
+                warnings,
+            )
+            check(
+                "ALIYUN_DYPNS_TEMPLATE_CODE",
+                bool(env.get("ALIYUN_DYPNS_TEMPLATE_CODE")),
+                env.get("ALIYUN_DYPNS_TEMPLATE_CODE", "missing"),
+                errors,
+                warnings,
+            )
         else:
-            check("SMS_PROVIDER", False, f"production should use aliyun, got {sms_provider}", errors, warnings)
+            check("SMS_PROVIDER", False, f"production should use aliyun or dypns, got {sms_provider}", errors, warnings)
 
     ai_enabled = env.get("AI_ENABLED", "true").lower() != "false"
     if ai_enabled:
