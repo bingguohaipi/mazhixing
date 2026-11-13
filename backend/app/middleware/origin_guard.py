@@ -44,15 +44,27 @@ class OriginGuardMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _allow(origin: str, request: Request) -> bool:
-        """白名单命中，或与当前请求同源（Host 一致）则放行。
+        """白名单命中，或与当前请求同主机（忽略端口）则放行。
 
-        同源放行可以免去把服务器 IP/域名逐个写进 CORS_ORIGINS，
-        换机器、换端口也不用改配置。
+        nginx 的 `proxy_set_header Host $host;` 会把端口剥掉（$host 不含端口），
+        所以这里只比较主机名，否则 http://IP:8080 访问时会误判为跨站。
+        同源放行也免去把服务器 IP/域名逐个写进 CORS_ORIGINS。
         """
         if origin in set(get_settings().cors_origin_list):
             return True
-        host = (request.headers.get("host") or "").strip().lower()
-        if not host:
+
+        origin_host = (urlparse(origin).hostname or "").lower()
+        if not origin_host:
             return False
-        netloc = urlparse(origin).netloc.strip().lower()
-        return netloc == host
+
+        candidates = []
+        forwarded_host = request.headers.get("x-forwarded-host")
+        if forwarded_host:
+            candidates.append(forwarded_host.split(",")[0])
+        candidates.append(request.headers.get("host") or "")
+
+        for raw in candidates:
+            hostname = (raw or "").strip().lower().split(":")[0]
+            if hostname and hostname == origin_host:
+                return True
+        return False
