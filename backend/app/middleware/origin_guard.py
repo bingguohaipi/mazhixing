@@ -25,8 +25,7 @@ class OriginGuardMiddleware(BaseHTTPMiddleware):
         if not origin:
             return await call_next(request)
 
-        allowed = set(settings.cors_origin_list)
-        if origin not in allowed:
+        if not self._allow(origin, request):
             return JSONResponse(
                 status_code=403,
                 content={"code": 403, "message": "暂无权限访问该页面", "data": None},
@@ -35,10 +34,25 @@ class OriginGuardMiddleware(BaseHTTPMiddleware):
         referer = request.headers.get("referer")
         if referer:
             referer_origin = f"{urlparse(referer).scheme}://{urlparse(referer).netloc}"
-            if referer_origin not in allowed:
+            if not self._allow(referer_origin, request):
                 return JSONResponse(
                     status_code=403,
                     content={"code": 403, "message": "暂无权限访问该页面", "data": None},
                 )
 
         return await call_next(request)
+
+    @staticmethod
+    def _allow(origin: str, request: Request) -> bool:
+        """白名单命中，或与当前请求同源（Host 一致）则放行。
+
+        同源放行可以免去把服务器 IP/域名逐个写进 CORS_ORIGINS，
+        换机器、换端口也不用改配置。
+        """
+        if origin in set(get_settings().cors_origin_list):
+            return True
+        host = (request.headers.get("host") or "").strip().lower()
+        if not host:
+            return False
+        netloc = urlparse(origin).netloc.strip().lower()
+        return netloc == host
