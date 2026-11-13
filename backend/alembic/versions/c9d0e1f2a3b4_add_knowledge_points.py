@@ -23,7 +23,8 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("name", sa.String(length=64), nullable=False),
         sa.Column("summary", sa.String(length=512), server_default="", nullable=False),
-        sa.Column("content_markdown", sa.Text(), server_default="", nullable=False),
+        # MySQL 8 不允许 TEXT/BLOB/JSON 列带 DEFAULT（会报 1101），默认值由应用层补齐
+        sa.Column("content_markdown", sa.Text(), nullable=False),
         sa.Column("sort_order", sa.Integer(), server_default="100", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
